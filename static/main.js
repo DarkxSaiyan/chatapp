@@ -11,9 +11,16 @@ const ICE_SERVERS = [
 ];
 
 let socket = null;
-let username = "";
+let currentUser = null; // {id, username, avatar_url, avatar_color, avatar_initial}
 let room = "";
 let mySid = null;
+
+function avatarHtml(u, sizeClass) {
+  if (u.avatar_url) {
+    return `<div class="avatar ${sizeClass}"><img src="${u.avatar_url}" alt=""></div>`;
+  }
+  return `<div class="avatar ${sizeClass}" style="background:${u.avatar_color}">${escapeHtml(u.avatar_initial)}</div>`;
+}
 
 // call state
 let localStream = null;
@@ -29,16 +36,21 @@ const el = (id) => document.getElementById(id);
 
 const joinScreen = el("join-screen");
 const appScreen = el("app-screen");
-const usernameInput = el("username-input");
+const joinIdentity = el("join-identity");
 const roomInput = el("room-input");
 const joinBtn = el("join-btn");
 const joinError = el("join-error");
+const signoutLink = el("signout-link");
 
 const roomNameLabel = el("room-name-label");
 const callBarRoom = el("call-bar-room");
+const meAvatar = el("me-avatar");
 const meLabel = el("me-label");
 const userListEl = el("user-list");
 const leaveBtn = el("leave-btn");
+const logoutBtn = el("logout-btn");
+const avatarEditBtn = el("avatar-edit-btn");
+const avatarFileInput = el("avatar-file-input");
 
 const messagesEl = el("messages");
 const composer = el("composer");
@@ -58,20 +70,37 @@ const toggleMicBtn = el("toggle-mic-btn");
 const toggleCamBtn = el("toggle-cam-btn");
 
 // ---------------------------------------------------------------------
-// Join flow
+// Identity (loaded from the logged-in session) + join flow
 // ---------------------------------------------------------------------
+(async function loadIdentity() {
+  try {
+    const res = await fetch("/api/me");
+    const data = await res.json();
+    if (!data.user) {
+      window.location.href = "/auth";
+      return;
+    }
+    currentUser = data.user;
+    joinIdentity.innerHTML = `
+      ${avatarHtml(currentUser, "avatar-md")}
+      <div class="join-identity-name">${escapeHtml(currentUser.username)}</div>
+    `;
+    meAvatar.outerHTML = avatarHtml(currentUser, "avatar-sm").replace('class="avatar', 'id="me-avatar" class="avatar');
+    meLabel.textContent = currentUser.username;
+  } catch (err) {
+    window.location.href = "/auth";
+  }
+})();
+
 joinBtn.addEventListener("click", doJoin);
-usernameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doJoin(); });
 roomInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doJoin(); });
 
 function doJoin() {
-  const u = usernameInput.value.trim();
   const r = roomInput.value.trim();
-  if (!u || !r) {
-    joinError.textContent = "Enter both a callsign and a channel name.";
+  if (!r) {
+    joinError.textContent = "Enter a channel name.";
     return;
   }
-  username = u;
   room = r;
 
   socket = io();
@@ -79,16 +108,47 @@ function doJoin() {
 
   socket.on("connect", () => {
     mySid = socket.id;
-    socket.emit("join", { username, room });
+    socket.emit("join", { room });
     joinScreen.classList.add("hidden");
     appScreen.classList.remove("hidden");
     roomNameLabel.textContent = "#" + room;
     callBarRoom.textContent = "#" + room;
-    meLabel.textContent = username;
+  });
+
+  socket.on("connect_error", () => {
+    joinError.textContent = "Could not connect — try logging in again.";
+    window.location.href = "/auth";
   });
 }
 
 leaveBtn.addEventListener("click", () => window.location.reload());
+
+signoutLink.addEventListener("click", doLogout);
+logoutBtn.addEventListener("click", doLogout);
+
+async function doLogout() {
+  try { await fetch("/api/logout", { method: "POST" }); } catch (err) { /* ignore */ }
+  window.location.href = "/auth";
+}
+
+avatarEditBtn.addEventListener("click", () => avatarFileInput.click());
+avatarFileInput.addEventListener("change", async () => {
+  const file = avatarFileInput.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append("file", file);
+  try {
+    const res = await fetch("/api/avatar", { method: "POST", body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Upload failed");
+    currentUser = data.user;
+    document.getElementById("me-avatar").outerHTML =
+      avatarHtml(currentUser, "avatar-sm").replace('class="avatar', 'id="me-avatar" class="avatar');
+  } catch (err) {
+    alert("Could not update avatar: " + err.message);
+  }
+  avatarFileInput.value = "";
+});
 
 // ---------------------------------------------------------------------
 // Socket event wiring (chat / presence / signaling)
@@ -99,11 +159,11 @@ function wireSocketEvents() {
   socket.on("user_list", (users) => renderUserList(users));
 
   socket.on("chat_message", (data) => {
-    addChatMessage(data.username, data.text, data.timestamp, false);
+    addChatMessage(data, data.text, data.timestamp, false);
   });
 
   socket.on("file_shared", (data) => {
-    addFileMessage(data.username, data.filename, data.url, data.size, data.timestamp, false);
+    addFileMessage(data, data.filename, data.url, data.size, data.timestamp, false);
   });
 
   socket.on("peer_left", (data) => {
@@ -168,8 +228,13 @@ function addChatMessage(user, text, timestamp, mine) {
   const div = document.createElement("div");
   div.className = "msg" + (mine ? " mine" : "");
   div.innerHTML = `
-    <div class="msg-meta">${escapeHtml(user)} · ${timestamp}</div>
-    <div class="msg-bubble">${escapeHtml(text)}</div>
+    <div class="msg-row">
+      ${avatarHtml(user, "avatar-sm")}
+      <div class="msg-body">
+        <div class="msg-meta">${escapeHtml(user.username)} · ${timestamp}</div>
+        <div class="msg-bubble">${escapeHtml(text)}</div>
+      </div>
+    </div>
   `;
   messagesEl.appendChild(div);
   scrollToBottom();
@@ -179,12 +244,17 @@ function addFileMessage(user, filename, url, size, timestamp, mine) {
   const div = document.createElement("div");
   div.className = "msg" + (mine ? " mine" : "");
   div.innerHTML = `
-    <div class="msg-meta">${escapeHtml(user)} · ${timestamp}</div>
-    <div class="msg-bubble file-card">
-      <span class="file-ico">&#128206;</span>
-      <div>
-        <div><a href="${url}" target="_blank" rel="noopener">${escapeHtml(filename)}</a></div>
-        <div class="file-meta">${formatBytes(size)}</div>
+    <div class="msg-row">
+      ${avatarHtml(user, "avatar-sm")}
+      <div class="msg-body">
+        <div class="msg-meta">${escapeHtml(user.username)} · ${timestamp}</div>
+        <div class="msg-bubble file-card">
+          <span class="file-ico">&#128206;</span>
+          <div>
+            <div><a href="${url}" target="_blank" rel="noopener">${escapeHtml(filename)}</a></div>
+            <div class="file-meta">${formatBytes(size)}</div>
+          </div>
+        </div>
       </div>
     </div>
   `;
@@ -192,12 +262,22 @@ function addFileMessage(user, filename, url, size, timestamp, mine) {
   scrollToBottom();
 }
 
+let roomUsers = {}; // sid -> user info, kept in sync from user_list events
+
 function renderUserList(users) {
+  roomUsers = {};
+  users.forEach((u) => { roomUsers[u.sid] = u; });
+
   userListEl.innerHTML = "";
   users.forEach((u) => {
     const li = document.createElement("li");
     const dotClass = u.in_call ? "signal-dot in-call" : "signal-dot on";
-    li.innerHTML = `<span class="${dotClass}"></span> ${escapeHtml(u.username)}${u.sid === mySid ? " (you)" : ""} <span class="tag">${u.in_call ? "in call" : ""}</span>`;
+    li.innerHTML = `
+      ${avatarHtml(u, "avatar-xs")}
+      <span class="${dotClass}"></span>
+      ${escapeHtml(u.username)}${u.sid === mySid ? " (you)" : ""}
+      <span class="tag">${u.in_call ? "in call" : ""}</span>
+    `;
     userListEl.appendChild(li);
   });
 }
@@ -226,8 +306,8 @@ composer.addEventListener("submit", (e) => {
   const text = messageInput.value.trim();
   if (!text) return;
   const timestamp = new Date().toTimeString().slice(0, 8);
-  socket.emit("chat_message", { room, username, text });
-  addChatMessage(username, text, timestamp, true);
+  socket.emit("chat_message", { room, text });
+  addChatMessage(currentUser, text, timestamp, true);
   messageInput.value = "";
 });
 
@@ -247,7 +327,6 @@ async function uploadFile(file) {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("room", room);
-  formData.append("username", username);
 
   uploadProgress.classList.remove("hidden");
   uploadProgressBar.style.width = "0%";
@@ -272,7 +351,7 @@ async function uploadFile(file) {
     });
 
     socket.emit("file_shared", data);
-    addFileMessage(username, data.filename, data.url, data.size, data.timestamp, true);
+    addFileMessage(currentUser, data.filename, data.url, data.size, data.timestamp, true);
   } catch (err) {
     alert("File upload failed: " + err.message);
   } finally {
@@ -308,7 +387,7 @@ async function startLocalMedia(callType) {
     ? { audio: true, video: { width: 320, height: 240 } }
     : { audio: true, video: false };
   localStream = await navigator.mediaDevices.getUserMedia(constraints);
-  addOrUpdateTile("local", "You", localStream, callType === "video");
+  addOrUpdateTile("local", (currentUser && currentUser.username ? currentUser.username : "You") + " (you)", localStream, callType === "video");
 }
 
 function showCallStage() {
@@ -344,7 +423,8 @@ async function createPeerConnection(peerSid, isInitiator) {
 
   pc.ontrack = (event) => {
     remoteStreams[peerSid] = event.streams[0];
-    addOrUpdateTile(peerSid, "Peer " + peerSid.slice(0, 5), event.streams[0], currentCallType === "video");
+    const label = (roomUsers[peerSid] && roomUsers[peerSid].username) || "Peer";
+    addOrUpdateTile(peerSid, label, event.streams[0], currentCallType === "video");
   };
 
   pc.onconnectionstatechange = () => {

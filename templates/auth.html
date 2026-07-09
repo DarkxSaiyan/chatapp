@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wireline — Sign in</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<div id="join-screen" class="screen">
+  <div class="join-card">
+    <div class="brand">
+      <span class="brand-mark">))) </span><span class="brand-name">WIRELINE</span>
+    </div>
+    <p class="brand-tagline">a small room for talk, files, voice &amp; video</p>
+
+    <div class="auth-tabs">
+      <button type="button" class="auth-tab active" data-tab="login">Log in</button>
+      <button type="button" class="auth-tab" data-tab="register">Create account</button>
+    </div>
+
+    <!-- LOGIN FORM -->
+    <form id="login-form" class="auth-form">
+      <label class="field-label" for="login-username">Username</label>
+      <input id="login-username" class="field-input" type="text" autocomplete="username" required>
+
+      <label class="field-label" for="login-password">Password</label>
+      <input id="login-password" class="field-input" type="password" autocomplete="current-password" required>
+
+      <button type="submit" class="btn btn-primary btn-block">Log in</button>
+    </form>
+
+    <!-- REGISTER FORM -->
+    <form id="register-form" class="auth-form hidden">
+      <label class="field-label" for="register-username">Choose a username</label>
+      <input id="register-username" class="field-input" type="text" autocomplete="username" placeholder="3-20 characters" required>
+
+      <label class="field-label" for="register-password">Choose a password</label>
+      <input id="register-password" class="field-input" type="password" autocomplete="new-password" placeholder="At least 6 characters" required>
+
+      <button type="submit" class="btn btn-primary btn-block">Create account</button>
+    </form>
+
+    <p id="auth-error" class="join-error"></p>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='auth.js') }}"></script>
+</body>
+</html>

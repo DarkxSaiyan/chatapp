@@ -18,14 +18,15 @@
     </div>
     <p class="brand-tagline">a small room for talk, files, voice &amp; video</p>
 
-    <label class="field-label" for="username-input">Callsign</label>
-    <input id="username-input" class="field-input" type="text" placeholder="e.g. atlas" maxlength="20" autocomplete="off">
+    <div id="join-identity" class="join-identity"></div>
 
     <label class="field-label" for="room-input">Channel</label>
     <input id="room-input" class="field-input" type="text" placeholder="e.g. lounge" maxlength="30" autocomplete="off">
 
     <button id="join-btn" class="btn btn-primary btn-block">Open channel</button>
     <p id="join-error" class="join-error"></p>
+
+    <button id="signout-link" class="btn btn-ghost btn-block small">Not you? Log out</button>
   </div>
 </div>
 
@@ -46,10 +47,13 @@
 
     <div class="sidebar-bottom">
       <div class="me-row">
-        <span class="signal-dot on"></span>
+        <div id="me-avatar" class="avatar avatar-sm"></div>
         <span id="me-label" class="me-label">—</span>
+        <button id="avatar-edit-btn" class="btn-avatar-edit" title="Change avatar">&#9998;</button>
       </div>
+      <input id="avatar-file-input" type="file" accept="image/*" class="hidden">
       <button id="leave-btn" class="btn btn-ghost btn-block small">Leave channel</button>
+      <button id="logout-btn" class="btn btn-ghost btn-block small">Log out</button>
     </div>
   </aside>
 
